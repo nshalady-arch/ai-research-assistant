@@ -334,8 +334,16 @@ class OpenAICompatibleClient(LLMClient):
     # ------------------------------------------------------------------ helpers
     def _chat(self, messages: list[dict[str, Any]], max_tokens: int, what: str,
               **extra: Any) -> dict[str, Any]:
+        token_limit = min(max_tokens, config.OPENAI_COMPAT_MAX_TOKENS)
+        # Newer GPT-5/6 Chat Completions models use max_completion_tokens;
+        # older compatible providers generally expect max_tokens.
+        token_limit_param = "max_completion_tokens" if self.model.startswith(("gpt-5", "gpt-6")) else "max_tokens"
         body = {"model": self.model, "messages": messages,
-                "max_tokens": min(max_tokens, config.OPENAI_COMPAT_MAX_TOKENS), **extra}
+                token_limit_param: token_limit, **extra}
+        # GPT-6 Luna requires reasoning_effort="none" for function calling
+        # through Chat Completions. This client uses that endpoint for A1 tools.
+        if self.model == "gpt-6-luna":
+            body["reasoning_effort"] = "none"
         last_error = ""
         for attempt in range(config.LLM_MAX_RETRIES + 1):
             try:
